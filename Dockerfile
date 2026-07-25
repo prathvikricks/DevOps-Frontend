@@ -1,51 +1,39 @@
-# Stage 1: Build the React application
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package.json and package-lock.json first to leverage Docker cache
-COPY package.json package-lock.json ./
+# Copy package files
+COPY package*.json ./
+COPY bun.lock ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (use legacy-peer-deps to avoid ERESOLVE peer dependency issues)
+RUN npm install --legacy-peer-deps
 
-# Copy the rest of the application code
+# Copy rest of the project
 COPY . .
 
-# Build the application for production
+# Build the project
 RUN npm run build
 
-# Stage 2: Serve the application with Nginx
+
 FROM nginx:alpine
 
-# Copy the built application from the builder stage
+# Remove default nginx static assets
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Remove the default Nginx configuration template
-RUN rm /etc/nginx/templates/default.conf.template
+# Add basic nginx config for Single Page Application
+RUN echo $'server { \n\
+    listen 80; \n\
+    location / { \n\
+        root /usr/share/nginx/html; \n\
+        index index.html index.htm; \n\
+        try_files $uri $uri/ /index.html; \n\
+    } \n\
+}' > /etc/nginx/conf.d/default.conf
 
-# Create a new Nginx configuration template that uses the PORT environment variable.
-# The official Nginx image's entrypoint processes templates in /etc/nginx/templates
-# and substitutes environment variables like $PORT.
-RUN echo "server {" > /etc/nginx/templates/default.conf.template \
-    && echo "    listen ${PORT:-8080};" >> /etc/nginx/templates/default.conf.template \
-    && echo "    listen [::]:${PORT:-8080};" >> /etc/nginx/templates/default.conf.template \
-    && echo "    server_name  localhost;" >> /etc/nginx/templates/default.conf.template \
-    && echo "" >> /etc/nginx/templates/default.conf.template \
-    && echo "    location / {" >> /etc/nginx/templates/default.conf.template \
-    && echo "        root   /usr/share/nginx/html;" >> /etc/nginx/templates/default.conf.template \
-    && echo "        index  index.html index.htm;" >> /etc/nginx/templates/default.conf.template \
-    && echo "        try_files \$uri \$uri/ /index.html;" >> /etc/nginx/templates/default.conf.template \
-    && echo "    }" >> /etc/nginx/templates/default.conf.template \
-    && echo "" >> /etc/nginx/templates/default.conf.template \
-    && echo "    error_page   500 502 503 504  /50x.html;" >> /etc/nginx/templates/default.conf.template \
-    && echo "    location = /50x.html {" >> /etc/nginx/templates/default.conf.template \
-    && echo "        root   /usr/share/nginx/html;" >> /etc/nginx/templates/default.conf.template \
-    && echo "    }" >> /etc/nginx/templates/default.conf.template \
-    && echo "}" >> /etc/nginx/templates/default.conf.template
+EXPOSE 80
 
-# Set default port and expose it
-ENV PORT 8080
-EXPOSE 8080
-
-# Nginx will be started by its default CMD, which processes the template and runs Nginx.
+CMD ["nginx", "-g", "daemon off;"]
