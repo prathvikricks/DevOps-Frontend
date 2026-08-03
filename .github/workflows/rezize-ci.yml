@@ -16,4 +16,4 @@ jobs:
         run: |
           docker rm -f devops-frontend 2>/dev/null || true
           docker run -d --name devops-frontend --restart unless-stopped \
-            -p 8080:8080 devops-frontend:latest
+            -p 8080:80 devops-frontend:latest
